@@ -30,6 +30,7 @@ options:
     -q, --quiet                              Turn off ia's output [default: False].
     -d, --dry-run                            Print URLs to stdout and exit.
     -i, --ignore-existing                    Clobber files already downloaded.
+    -r, --resume-existing                    Attempt to resume existing downloads [default: False]
     -C, --checksum                           Skip files based on checksum [default: False].
     -R, --retries=<retries>                  Set number of retries to <retries> [default: 5].
     -I, --itemlist=<file>                    Download items from a specified file. Itemlists should
@@ -199,6 +200,7 @@ def main(argv, session: ArchiveSession) -> None:
             dry_run=args['--dry-run'],
             verbose=not args['--quiet'],
             ignore_existing=args['--ignore-existing'],
+            resume_existing=args['--resume-existing'],
             checksum=args['--checksum'],
             destdir=args['--destdir'],
             no_directory=args['--no-directories'],

@@ -137,9 +137,9 @@ class File(BaseFile):
                 f'format={self.format!r})')
 
     def download(self, file_path=None, verbose=None, ignore_existing=None,
-                 checksum=None, destdir=None, retries=None, ignore_errors=None,
-                 fileobj=None, return_responses=None, no_change_timestamp=None,
-                 params=None, chunk_size=None):
+                 resume_existing=None, checksum=None, destdir=None, retries=None,
+                 ignore_errors=None, fileobj=None, return_responses=None,
+                 no_change_timestamp=None, params=None, chunk_size=None):
         """Download the file into the current working directory.
 
         :type file_path: str
@@ -151,6 +151,9 @@ class File(BaseFile):
         :type ignore_existing: bool
         :param ignore_existing: Overwrite local files if they already
                                 exist.
+
+        :type resume_existing: bool
+        :param resume_existing: Resume local files if they already exist.
 
         :type checksum: bool
         :param checksum: (optional) Skip downloading file based on checksum.
@@ -188,6 +191,7 @@ class File(BaseFile):
         """
         verbose = False if verbose is None else verbose
         ignore_existing = False if ignore_existing is None else ignore_existing
+        resume_existing = False if resume_existing is None else resume_existing
         checksum = False if checksum is None else checksum
         retries = retries or 2
         ignore_errors = ignore_errors or False
@@ -208,6 +212,9 @@ class File(BaseFile):
                 raise OSError(f'{destdir} is not a directory!')
             file_path = os.path.join(destdir, file_path)
 
+        http_headers = {}
+        start_size = 0
+        file_mode = 'wb'
         if not return_responses and os.path.exists(file_path.encode('utf-8')):
             if ignore_existing:
                 msg = f'skipping {file_path}, file already exists.'
@@ -216,6 +223,8 @@ class File(BaseFile):
                     print(f' {msg}', file=sys.stderr)
                 return
             elif checksum:
+                # FIXME - checksum conflicts with resume_existing, but should be
+                #         used to verify that a multi-part download succeeded
                 with open(file_path, 'rb') as fp:
                     md5_sum = utils.get_md5(fp)
 
@@ -234,6 +243,10 @@ class File(BaseFile):
                     if verbose:
                         print(f' {msg}', file=sys.stderr)
                     return
+                elif resume_existing:
+                    http_headers['Range'] = 'bytes=%d-%d' % (st.st_size, self.size)
+                    fileobj = open(file_path.encode('utf-8'), 'ab')
+                    start_size = st.st_size
 
         parent_dir = os.path.dirname(file_path)
         try:
@@ -244,25 +257,33 @@ class File(BaseFile):
                                              stream=True,
                                              timeout=12,
                                              auth=self.auth,
-                                             params=params)
+                                             params=params,
+                                             headers=http_headers)
+
+            if resume_existing and response.status_code == 206:
+                if fileobj:
+                    fileobj.seek(start_size) # FIXME - this always seeks to 0, because we have nothing to stat if we received a filehandle. what should we do here?
+                else:
+                    file_mode = 'ab'
             response.raise_for_status()
             if return_responses:
                 return response
 
             if verbose:
-                total = int(response.headers.get('content-length', 0)) or None
+                total = int(response.headers.get('content-length', 0)) + start_size or None
                 progress_bar = tqdm(desc=f' downloading {self.name}',
                                     total=total,
                                     unit='iB',
                                     unit_scale=True,
-                                    unit_divisor=1024)
+                                    unit_divisor=1024,
+                                    initial=start_size)
             else:
                 progress_bar = nullcontext()
 
             if not chunk_size:
                 chunk_size = 1048576
             if not fileobj:
-                fileobj = open(file_path.encode('utf-8'), 'wb')
+                fileobj = open(file_path.encode('utf-8'), file_mode)
 
             with fileobj, progress_bar as bar:
                 for chunk in response.iter_content(chunk_size=chunk_size):
@@ -273,10 +294,10 @@ class File(BaseFile):
         except (RetryError, HTTPError, ConnectTimeout, OSError, ReadTimeout) as exc:
             msg = f'error downloading file {file_path}, exception raised: {exc}'
             log.error(msg)
-            try:
-                os.remove(file_path)
-            except OSError:
-                pass
+            #try:
+            #    os.remove(file_path)
+            #except OSError:
+            #    pass
             if verbose:
                 print(f' {msg}', file=sys.stderr)
             if ignore_errors:

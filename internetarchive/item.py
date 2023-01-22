@@ -588,6 +588,7 @@ class Item(BaseItem):
                  dry_run: bool = False,
                  verbose: bool = False,
                  ignore_existing: bool = False,
+                 resume_existing: bool = False,
                  checksum: bool = False,
                  destdir: str | None = None,
                  no_directory: bool = False,
@@ -657,6 +658,7 @@ class Item(BaseItem):
         dry_run = bool(dry_run)
         verbose = bool(verbose)
         ignore_existing = bool(ignore_existing)
+        resume_existing = bool(resume_existing)
         ignore_errors = bool(ignore_errors)
         checksum = bool(checksum)
         no_directory = bool(no_directory)
@@ -716,7 +718,7 @@ class Item(BaseItem):
                 continue
             r = f.download(path, verbose, ignore_existing, checksum, destdir,
                            retries, ignore_errors, None, return_responses,
-                           no_change_timestamp, params)
+                           no_change_timestamp, params, resume_existing=resume_existing)
             if return_responses:
                 responses.append(r)
 
